@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>myvpn</title>
+<style>
+  :root {
+    --bg: #f3f4f6; --card: #ffffff; --text: #15171c; --muted: #6b7280; --line: #e2e4e8;
+    --accent: #2563eb; --accent-text: #ffffff; --ok: #16a34a; --warn: #d97706; --err: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --card: #181b21; --text: #e8eaed; --muted: #9aa0a6; --line: #2b2f37;
+      --accent: #4f8cff; --accent-text: #0b0d10; --ok: #22c55e; --warn: #f59e0b; --err: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  main { max-width: 420px; margin: 48px auto; padding: 0 16px; }
+  h1 { font-size: 18px; margin: 0 0 16px; letter-spacing: .02em; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .state { display: flex; align-items: center; gap: 10px; font-size: 20px; font-weight: 600; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 20%, transparent); }
+  .dot.warn { background: var(--warn); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; margin: 16px 0 0; font-size: 14px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-family: ui-monospace, "SF Mono", Menlo, monospace; overflow-wrap: anywhere; }
+  button { width: 100%; padding: 11px; margin-top: 18px; border: 0; border-radius: 8px; background: var(--accent);
+           color: var(--accent-text); font: inherit; font-weight: 600; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button:disabled { opacity: .55; cursor: default; }
+  summary { cursor: pointer; font-weight: 600; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 4px; }
+  input { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg);
+          color: var(--text); font: inherit; }
+  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  input.code { font-family: ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .1em; }
+  .hint { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+  .msg { font-size: 14px; margin-top: 12px; min-height: 1.2em; }
+  .msg.err { color: var(--err); }
+  .msg.ok { color: var(--ok); }
+</style>
+</head>
+<body>
+<main>
+  <h1>myvpn</h1>
+
+  <section class="card">
+    <div class="state"><span id="dot" class="dot"></span><span id="state">…</span></div>
+    <dl id="info" hidden>
+      <dt>Sunucu</dt><dd id="server">—</dd>
+      <dt>Adres</dt><dd id="address">—</dd>
+      <dt>Son el sıkışma</dt><dd id="handshake">—</dd>
+      <dt>Trafik</dt><dd id="traffic">—</dd>
+    </dl>
+    <button id="toggle" hidden></button>
+    <div id="toggleMsg" class="msg"></div>
+  </section>
+
+  <section class="card">
+    <details id="pairBox">
+      <summary id="pairTitle">Sunucuyla eşleş</summary>
+      <form id="pairForm" autocomplete="off">
+        <label for="srv">Sunucu adresi</label>
+        <input id="srv" placeholder="203.0.113.10" required>
+        <label for="c1">Sunucu kodu</label>
+        <input id="c1" class="code" placeholder="XXXX-XXXX-XXXX" required>
+        <label for="c2">Eşleşme kodu</label>
+        <input id="c2" class="code" placeholder="XXXX-XXXX-XXXX" required>
+        <p class="hint">Kodlar sunucuda <code>sudo myvpn-server pair</code> çalıştırınca görünür.</p>
+        <button id="pairBtn" type="submit">Eşleş ve bağlan</button>
+        <div id="pairMsg" class="msg"></div>
+      </form>
+    </details>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let busy = false, firstRender = true;
+
+async function api(path, body) {
+  const opts = body === undefined ? {} : {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  };
+  const r = await fetch(path, opts);
+  const j = await r.json().catch(() => ({ error: 'Beklenmeyen yanıt (' + r.status + ')' }));
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+
+function bytes(n) {
+  const u = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let i = 0;
+  while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+  return (i ? n.toFixed(1) : n) + ' ' + u[i];
+}
+
+function ago(t) {
+  if (!t) return 'henüz yok';
+  const s = Math.max(0, Math.round(Date.now() / 1000 - t));
+  if (s < 60) return s + ' sn önce';
+  if (s < 3600) return Math.round(s / 60) + ' dk önce';
+  return Math.round(s / 3600) + ' sa önce';
+}
+
+function render(st) {
+  const fresh = st.connected && st.last_handshake && (Date.now() / 1000 - st.last_handshake) < 180;
+  let text = 'Eşleşmemiş', cls = '';
+  if (st.paired && !st.connected) text = 'Bağlı değil';
+  else if (fresh) { text = 'Bağlı'; cls = 'ok'; }
+  else if (st.connected) { text = 'Bağlanıyor…'; cls = 'warn'; }
+  $('#state').textContent = text;
+  $('#dot').className = 'dot ' + cls;
+
+  $('#info').hidden = !st.paired;
+  $('#server').textContent = st.server || '—';
+  $('#address').textContent = st.address || '—';
+  $('#handshake').textContent = st.connected ? ago(st.last_handshake) : '—';
+  $('#traffic').textContent = st.connected ? '↓ ' + bytes(st.rx_bytes) + '   ↑ ' + bytes(st.tx_bytes) : '—';
+
+  const t = $('#toggle');
+  t.hidden = !st.paired;
+  t.textContent = st.connected ? 'Bağlantıyı kes' : 'Bağlan';
+  t.className = st.connected ? 'secondary' : '';
+
+  $('#pairTitle').textContent = st.paired ? 'Başka bir sunucuyla eşleş' : 'Sunucuyla eşleş';
+  if (firstRender) { $('#pairBox').open = !st.paired; firstRender = false; }
+}
+
+function setMsg(el, text, kind) { el.textContent = text; el.className = 'msg ' + (kind || ''); }
+
+async function refresh() {
+  if (busy) return;
+  try { render(await api('/api/status')); }
+  catch (e) { setMsg($('#toggleMsg'), e.message, 'err'); }
+}
+
+async function run(btn, msgEl, fn) {
+  busy = true; btn.disabled = true; setMsg(msgEl, 'Lütfen bekle…');
+  try { render(await fn()); setMsg(msgEl, ''); return true; }
+  catch (e) { setMsg(msgEl, e.message, 'err'); return false; }
+  finally { busy = false; btn.disabled = false; }
+}
+
+$('#toggle').addEventListener('click', () => {
+  const connected = $('#toggle').textContent === 'Bağlantıyı kes';
+  run($('#toggle'), $('#toggleMsg'), () => api(connected ? '/api/down' : '/api/up', {}));
+});
+
+// Kodları yazarken otomatik XXXX-XXXX-XXXX biçimine getir.
+for (const id of ['#c1', '#c2']) {
+  $(id).addEventListener('input', (e) => {
+    const raw = e.target.value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 12);
+    e.target.value = raw.match(/.{1,4}/g)?.join('-') ?? '';
+  });
+}
+
+$('#pairForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const ok = await run($('#pairBtn'), $('#pairMsg'), () => api('/api/pair', {
+    server: $('#srv').value, server_code: $('#c1').value, pair_code: $('#c2').value,
+  }));
+  if (ok) {
+    $('#c1').value = ''; $('#c2').value = '';
+    setMsg($('#pairMsg'), 'Eşleşme tamam, bağlanıldı.', 'ok');
+    $('#pairBox').open = false;
+  }
+});
+
+refresh();
+setInterval(refresh, 3000);
+</script>
+</body>
+</html>

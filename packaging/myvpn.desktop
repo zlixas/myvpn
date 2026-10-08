@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=myvpn
+Comment=Kişisel VPN
+Exec=x-terminal-emulator -e /usr/local/bin/myvpn gui
+Icon=network-vpn
+Terminal=false
+Categories=Network;
