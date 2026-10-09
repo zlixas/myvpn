@@ -105,14 +105,14 @@ install_server() {
 }
 
 install_client() {
-  local pkgs=(wireguard-tools)
+  local pkgs=(wireguard-tools iproute2 procps)
   # wg-quick, VPN'in DNS ayarı için resolvconf ister (systemd-resolved varsa zaten vardır).
   command -v resolvconf >/dev/null || pkgs+=(openresolv)
   apt_install "${pkgs[@]}"
   make_tmp
   fetch_release "$TMP"
   install -m 755 "$TMP/myvpn" "$BIN_DIR/myvpn"
-  install -m 644 "$TMP/myvpn.desktop" /usr/share/applications/myvpn.desktop
+  install -D -m 644 "$TMP/myvpn.desktop" /usr/share/applications/myvpn.desktop
   ok "myvpn kuruldu: $BIN_DIR/myvpn"
 
   if [[ -f /etc/wireguard/myvpn.conf ]]; then

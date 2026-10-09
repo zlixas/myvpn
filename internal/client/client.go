@@ -38,7 +38,7 @@ type Status struct {
 }
 
 func checkTools() error {
-	return sysutil.RequireTools("apt install wireguard-tools openresolv", "wg", "wg-quick")
+	return sysutil.RequireTools("apt install wireguard-tools iproute2 procps openresolv", "wg", "wg-quick", "ip", "sysctl")
 }
 
 // Pair, sunucuyla eşleşir ve WireGuard yapılandırmasını yazar.
