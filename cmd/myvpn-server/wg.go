@@ -72,6 +72,10 @@ func latestHandshakes() map[string]int64 {
 }
 
 func enableForwarding() error {
+	// Minimal Debian kurulumlarında (procps yokken) bu dizin olmayabilir.
+	if err := os.MkdirAll("/etc/sysctl.d", 0o755); err != nil {
+		return err
+	}
 	if err := os.WriteFile("/etc/sysctl.d/99-myvpn.conf", []byte("net.ipv4.ip_forward = 1\n"), 0o644); err != nil {
 		return err
 	}
@@ -79,7 +83,7 @@ func enableForwarding() error {
 	if strings.TrimSpace(string(cur)) == "1" {
 		return nil
 	}
-	return sysutil.Run("sysctl", "-w", "net.ipv4.ip_forward=1")
+	return os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1\n"), 0o644)
 }
 
 // defaultIface, internete çıkan arayüzün adını bulur (örn. eth0).

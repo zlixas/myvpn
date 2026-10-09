@@ -128,15 +128,16 @@ func cmdInit(args []string) error {
 	if err := enableForwarding(); err != nil {
 		return err
 	}
-	fmt.Println("• Anahtarlar ve yapılandırma yazılıyor")
-	if err := st.save(); err != nil {
-		return err
-	}
+	fmt.Println("• Yapılandırma yazılıyor")
 	if err := writeWGConf(st); err != nil {
 		return err
 	}
 	fmt.Printf("• %s arayüzü başlatılıyor\n", iface)
 	if err := startInterface(); err != nil {
+		return err
+	}
+	// Durum en son kaydedilir: yarıda kalan kurulum "init" ile baştan denenebilir.
+	if err := st.save(); err != nil {
 		return err
 	}
 	fmt.Printf("✓ Sunucu kuruldu. Güvenlik duvarında UDP %d ve TCP %d açık olmalı.\n", st.ListenPort, st.PairPort)
